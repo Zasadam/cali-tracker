@@ -1,0 +1,421 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="theme-color" content="#0F0F0F" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Cali Tracker" />
+  <title>Cali Tracker</title>
+  <script>
+    const manifest = {
+      name: "Calisthenics Tracker", short_name: "Cali Tracker",
+      start_url: ".", display: "standalone",
+      background_color: "#0F0F0F", theme_color: "#0F0F0F", orientation: "portrait",
+      icons: [{ src: "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Crect width='512' height='512' rx='80' fill='%230F0F0F'/%3E%3Ctext x='256' y='340' font-size='280' text-anchor='middle'%3E%F0%9F%92%AA%3C/text%3E%3C/svg%3E", sizes: "512x512", type: "image/svg+xml", purpose: "any maskable" }]
+    };
+    const mb = new Blob([JSON.stringify(manifest)], {type:"application/json"});
+    document.write('<link rel="manifest" href="'+URL.createObjectURL(mb)+'">');
+  </script>
+  <link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Crect width='512' height='512' rx='80' fill='%230F0F0F'/%3E%3Ctext x='256' y='340' font-size='280' text-anchor='middle'%3E%F0%9F%92%AA%3C/text%3E%3C/svg%3E" />
+  <style>
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+    html,body{height:100%;background:#0F0F0F;color:#F5F5F0;font-family:-apple-system,'Inter',system-ui,sans-serif;-webkit-tap-highlight-color:transparent}
+    body{padding-top:env(safe-area-inset-top);padding-bottom:env(safe-area-inset-bottom)}
+    input[type=number]::-webkit-inner-spin-button,input[type=number]::-webkit-outer-spin-button{-webkit-appearance:none}
+    input[type=number]{-moz-appearance:textfield}
+    button{-webkit-tap-highlight-color:transparent}
+    ::-webkit-scrollbar{display:none}
+  </style>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useEffect } = React;
+
+const DEFAULT_EXERCISES = [
+  { id: "pushups",  name: "Liegestützen",    emoji: "💪" },
+  { id: "pullups",  name: "Klimmzüge",       emoji: "🏋️" },
+  { id: "dips",     name: "Dips",            emoji: "⬇️" },
+  { id: "crunches", name: "Crunches",        emoji: "🔥" },
+  { id: "squats",   name: "Kniebeugen",      emoji: "🦵" },
+  { id: "plank",    name: "Plank (Sek.)",    emoji: "🧱" },
+  { id: "burpees",  name: "Burpees",         emoji: "⚡" },
+  { id: "lunges",   name: "Ausfallschritte", emoji: "🚶" },
+];
+
+const todayISO = () => new Date().toISOString().split("T")[0];
+const fmtDate  = (s) => new Date(s+"T00:00:00").toLocaleDateString("de-DE",{weekday:"short",day:"numeric",month:"short"});
+const getDIM   = (y,m) => new Date(y,m+1,0).getDate();
+const getFirst = (y,m) => { const d=new Date(y,m,1).getDay(); return d===0?6:d-1; };
+
+const S = {
+  input:   {background:"#2C2C2E",border:"1px solid #3a3a3e",color:"#F5F5F0",borderRadius:8,padding:"9px 12px",fontSize:15,outline:"none",width:"100%"},
+  btnBlue: {background:"#3B82F6",border:"none",color:"#fff",borderRadius:8,padding:"9px 0",cursor:"pointer",fontWeight:700,fontSize:14},
+  btnGray: {background:"#2C2C2E",border:"none",color:"#F5F5F0",borderRadius:8,padding:"9px 0",cursor:"pointer",fontWeight:700,fontSize:14},
+  card:    {background:"#1C1C1E",borderRadius:16,padding:"18px 16px",marginBottom:12},
+};
+
+function App() {
+  const [tab,        setTab]        = useState("today");
+  const [exercises,  setExercises]  = useState(() => { try { return JSON.parse(localStorage.getItem("cal_exercises")||"null")||DEFAULT_EXERCISES; } catch { return DEFAULT_EXERCISES; } });
+  const [logs,       setLogs]       = useState(() => { try { return JSON.parse(localStorage.getItem("cal_logs")||"{}"); } catch { return {}; } });
+  const [activeEx,   setActiveEx]   = useState(() => { try { return JSON.parse(localStorage.getItem("cal_active")||"null")||DEFAULT_EXERCISES.slice(0,4).map(e=>e.id); } catch { return []; } });
+  const [calMonth,   setCalMonth]   = useState(() => { const n=new Date(); return {year:n.getFullYear(),month:n.getMonth()}; });
+  const [selDay,     setSelDay]     = useState(null);
+  const [inputVals,  setInputVals]  = useState({});
+  const [detailEx,   setDetailEx]   = useState(null);
+  const [showPicker, setShowPicker] = useState(false);
+  const [newExName,  setNewExName]  = useState("");
+  const [newExEmoji, setNewExEmoji] = useState("🏃");
+  const [renamingId, setRenamingId] = useState(null);
+  const [renameVal,  setRenameVal]  = useState({name:"",emoji:""});
+
+  useEffect(() => { localStorage.setItem("cal_exercises", JSON.stringify(exercises)); }, [exercises]);
+  useEffect(() => { localStorage.setItem("cal_logs",      JSON.stringify(logs));      }, [logs]);
+  useEffect(() => { localStorage.setItem("cal_active",    JSON.stringify(activeEx));  }, [activeEx]);
+
+  const today    = todayISO();
+  const todayLog = logs[today] || {};
+
+  const logReps = (exId, reps) => {
+    const n=parseInt(reps); if(isNaN(n)||n<1) return;
+    setLogs(p=>({...p,[today]:{...(p[today]||{}),[exId]:((p[today]||{})[exId]||0)+n}}));
+    setInputVals(p=>({...p,[exId]:""}));
+  };
+  const removeReps = (exId, reps) => {
+    const n=parseInt(reps); if(isNaN(n)||n<1) return;
+    setLogs(p=>{ const cur=(p[today]||{})[exId]||0; return {...p,[today]:{...(p[today]||{}),[exId]:Math.max(0,cur-n)}}; });
+    setInputVals(p=>({...p,[exId]:""}));
+  };
+
+  const lifetimeTotals = () => {
+    const t={};
+    Object.values(logs).forEach(dl=>Object.entries(dl).forEach(([id,c])=>{t[id]=(t[id]||0)+c;}));
+    return t;
+  };
+  const exerciseHistory = (exId) =>
+    Object.entries(logs).filter(([,dl])=>(dl[exId]||0)>0)
+      .map(([date,dl])=>({date,count:dl[exId]})).sort((a,b)=>a.date.localeCompare(b.date));
+
+  const addCustomExercise = () => {
+    if(!newExName.trim()) return;
+    const id="custom_"+Date.now();
+    setExercises(p=>[...p,{id,name:newExName.trim(),emoji:newExEmoji}]);
+    setActiveEx(p=>[...p,id]);
+    setNewExName(""); setNewExEmoji("🏃");
+  };
+  const toggleActive  = (exId) => setActiveEx(p=>p.includes(exId)?p.filter(i=>i!==exId):[...p,exId]);
+  const startRename   = (ex)   => { setRenamingId(ex.id); setRenameVal({name:ex.name,emoji:ex.emoji}); };
+  const confirmRename = ()     => {
+    if(!renameVal.name.trim()) return;
+    setExercises(p=>p.map(e=>e.id===renamingId?{...e,name:renameVal.name.trim(),emoji:renameVal.emoji}:e));
+    setRenamingId(null);
+  };
+
+  const activeExList = exercises.filter(e=>activeEx.includes(e.id));
+  const totals       = lifetimeTotals();
+  const {year,month} = calMonth;
+  const daysInMonth  = getDIM(year,month);
+  const firstDay     = getFirst(year,month);
+  const monthName    = new Date(year,month,1).toLocaleDateString("de-DE",{month:"long",year:"numeric"});
+
+  const dayHasLog  = (d) => { const ds=`${year}-${String(month+1).padStart(2,"0")}-${String(d).padStart(2,"0")}`; const l=logs[ds]; return l&&Object.values(l).some(v=>v>0); };
+  const selDayStr  = selDay?`${year}-${String(month+1).padStart(2,"0")}-${String(selDay).padStart(2,"0")}`:null;
+  const selDayLog  = selDayStr?(logs[selDayStr]||{}):{};
+  const detailExObj= detailEx?exercises.find(e=>e.id===detailEx):null;
+  const detailHist = detailEx?exerciseHistory(detailEx):[];
+  const detailMax  = detailHist.length>0?Math.max(...detailHist.map(h=>h.count)):1;
+
+  return (
+    <div style={{minHeight:"100vh",background:"#0F0F0F",color:"#F5F5F0",maxWidth:480,margin:"0 auto",paddingBottom:80}}>
+
+      {/* Header */}
+      <div style={{padding:"28px 20px 12px",borderBottom:"1px solid #1C1C1E"}}>
+        <div style={{fontSize:11,letterSpacing:3,color:"#3B82F6",fontWeight:700,textTransform:"uppercase",marginBottom:4}}>Calisthenics</div>
+        <div style={{fontSize:26,fontWeight:800,letterSpacing:-1}}>Tracker</div>
+      </div>
+
+      {/* Tabs */}
+      <div style={{display:"flex",borderBottom:"1px solid #1C1C1E",background:"#0F0F0F",position:"sticky",top:0,zIndex:10}}>
+        {[{k:"today",l:"Heute"},{k:"calendar",l:"Kalender"},{k:"lifetime",l:"Lifetime"}].map(t=>(
+          <button key={t.k} onClick={()=>{setTab(t.k);setDetailEx(null);}} style={{flex:1,padding:"14px 0",background:"none",border:"none",cursor:"pointer",color:tab===t.k?"#3B82F6":"#8E8E93",fontWeight:tab===t.k?700:400,fontSize:14,borderBottom:tab===t.k?"2px solid #3B82F6":"2px solid transparent"}}>{t.l}</button>
+        ))}
+      </div>
+
+      {/* ── HEUTE ── */}
+      {tab==="today"&&(
+        <div style={{padding:"20px 16px"}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
+            <div>
+              <div style={{fontSize:13,color:"#8E8E93"}}>{fmtDate(today)}</div>
+              <div style={{fontSize:16,fontWeight:700}}>Dein Training</div>
+            </div>
+            <button onClick={()=>setShowPicker(true)} style={{background:"#1C1C1E",border:"1px solid #2C2C2E",color:"#F5F5F0",padding:"8px 14px",borderRadius:10,fontSize:13,cursor:"pointer",fontWeight:600}}>+ Übungen</button>
+          </div>
+
+          {activeExList.length===0&&(
+            <div style={{textAlign:"center",padding:"60px 0",color:"#8E8E93"}}>
+              <div style={{fontSize:36,marginBottom:12}}>🏋️</div>
+              <div>Wähle Übungen aus, die du tracken möchtest.</div>
+              <button onClick={()=>setShowPicker(true)} style={{...S.btnBlue,marginTop:16,padding:"10px 20px",borderRadius:10}}>Übungen wählen</button>
+            </div>
+          )}
+
+          {activeExList.map(ex=>{
+            const done=todayLog[ex.id]||0, iv=inputVals[ex.id]||"";
+            return (
+              <div key={ex.id} style={{...S.card,border:done>0?"1px solid #1d3b6b":"1px solid #2C2C2E"}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:14}}>
+                  <div style={{display:"flex",alignItems:"center",gap:10}}>
+                    <span style={{fontSize:24}}>{ex.emoji}</span>
+                    <div>
+                      <div style={{fontWeight:700,fontSize:15}}>{ex.name}</div>
+                      <div style={{fontSize:12,color:"#8E8E93",marginTop:2}}>Lifetime: <span style={{color:"#3B82F6",fontWeight:700}}>{(totals[ex.id]||0).toLocaleString("de-DE")}</span></div>
+                    </div>
+                  </div>
+                  <div style={{textAlign:"right"}}>
+                    <div style={{fontSize:32,fontWeight:800,lineHeight:1,color:done>0?"#F5F5F0":"#4a4a50"}}>{done.toLocaleString("de-DE")}</div>
+                    <div style={{fontSize:11,color:"#8E8E93",marginTop:2}}>heute</div>
+                  </div>
+                </div>
+                <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:6,marginBottom:8}}>
+                  {[5,10,15,20].map(n=><button key={n} onClick={()=>logReps(ex.id,n)} style={{...S.btnGray}}>{`+${n}`}</button>)}
+                </div>
+                <div style={{display:"flex",gap:6}}>
+                  <button onClick={()=>removeReps(ex.id,iv||1)} style={{...S.btnGray,color:"#F97316",width:40,flexShrink:0,fontSize:18}}>−</button>
+                  <input type="number" min="1" placeholder="eigene Zahl" value={iv}
+                    onChange={e=>setInputVals(p=>({...p,[ex.id]:e.target.value}))}
+                    onKeyDown={e=>e.key==="Enter"&&logReps(ex.id,iv)}
+                    style={{...S.input,flex:1,minWidth:0}}/>
+                  <button onClick={()=>logReps(ex.id,iv||1)} style={{...S.btnBlue,width:40,flexShrink:0,fontSize:18}}>+</button>
+                </div>
+                {done>0&&(
+                  <div style={{marginTop:8,display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:6}}>
+                    {[5,10,15,20].map(n=><button key={n} onClick={()=>removeReps(ex.id,n)} style={{background:"transparent",border:"1px solid #2C2C2E",color:"#F97316",borderRadius:6,padding:"5px 0",cursor:"pointer",fontSize:11,fontWeight:600}}>{`−${n}`}</button>)}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* ── KALENDER ── */}
+      {tab==="calendar"&&(
+        <div style={{padding:"20px 16px"}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
+            <button onClick={()=>setCalMonth(m=>{const d=new Date(m.year,m.month-1,1);return{year:d.getFullYear(),month:d.getMonth()};})} style={{background:"none",border:"none",color:"#8E8E93",cursor:"pointer",fontSize:26,padding:"0 8px"}}>‹</button>
+            <div style={{fontWeight:700,fontSize:17}}>{monthName}</div>
+            <button onClick={()=>setCalMonth(m=>{const d=new Date(m.year,m.month+1,1);return{year:d.getFullYear(),month:d.getMonth()};})} style={{background:"none",border:"none",color:"#8E8E93",cursor:"pointer",fontSize:26,padding:"0 8px"}}>›</button>
+          </div>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:2,marginBottom:4}}>
+            {["Mo","Di","Mi","Do","Fr","Sa","So"].map(d=><div key={d} style={{textAlign:"center",fontSize:11,color:"#8E8E93",padding:"6px 0",fontWeight:600}}>{d}</div>)}
+          </div>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:3}}>
+            {Array.from({length:firstDay}).map((_,i)=><div key={"e"+i}/>)}
+            {Array.from({length:daysInMonth}).map((_,i)=>{
+              const d=i+1, ds=`${year}-${String(month+1).padStart(2,"0")}-${String(d).padStart(2,"0")}`;
+              const hasLog=dayHasLog(d),isToday=ds===today,isSel=selDay===d;
+              return (
+                <button key={d} onClick={()=>setSelDay(isSel?null:d)} style={{aspectRatio:"1",borderRadius:10,border:isSel?"2px solid #3B82F6":isToday?"2px solid #4a4a50":"2px solid transparent",background:hasLog?(isSel?"#1d3b6b":"#162d56"):"#1C1C1E",color:"#F5F5F0",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:1,padding:2}}>
+                  <span style={{fontSize:13,fontWeight:isToday?800:500}}>{d}</span>
+                  {hasLog&&<div style={{width:4,height:4,borderRadius:"50%",background:"#3B82F6"}}/>}
+                </button>
+              );
+            })}
+          </div>
+          {selDay&&(
+            <div style={{marginTop:20,...S.card,border:"1px solid #2C2C2E"}}>
+              <div style={{fontWeight:700,fontSize:15,marginBottom:14}}>{fmtDate(selDayStr)}</div>
+              {Object.keys(selDayLog).length===0
+                ?<div style={{color:"#8E8E93",fontSize:14}}>Kein Training an diesem Tag.</div>
+                :exercises.filter(e=>selDayLog[e.id]).map(ex=>(
+                  <div key={ex.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 0",borderBottom:"1px solid #2C2C2E"}}>
+                    <div style={{display:"flex",alignItems:"center",gap:10}}><span>{ex.emoji}</span><span style={{fontSize:14}}>{ex.name}</span></div>
+                    <span style={{fontWeight:800,fontSize:20,color:"#3B82F6"}}>{selDayLog[ex.id].toLocaleString("de-DE")}</span>
+                  </div>
+                ))
+              }
+              {Object.keys(selDayLog).length>0&&(
+                <div style={{marginTop:12,display:"flex",justifyContent:"space-between",paddingTop:10}}>
+                  <span style={{color:"#8E8E93",fontSize:13}}>Gesamt</span>
+                  <span style={{fontWeight:800,fontSize:18}}>{Object.values(selDayLog).reduce((a,b)=>a+b,0).toLocaleString("de-DE")}</span>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── LIFETIME ÜBERSICHT ── */}
+      {tab==="lifetime"&&!detailEx&&(
+        <div style={{padding:"20px 16px"}}>
+          <div style={{marginBottom:20}}>
+            <div style={{fontSize:13,color:"#8E8E93",marginBottom:4}}>Deine gesamten Wiederholungen</div>
+            <div style={{fontSize:16,fontWeight:700}}>Lifetime Stats</div>
+          </div>
+          <div style={{background:"#162d56",borderRadius:20,padding:"24px 20px",marginBottom:16,border:"1px solid #1d3b6b",textAlign:"center"}}>
+            <div style={{fontSize:12,letterSpacing:2,color:"#3B82F6",fontWeight:700,textTransform:"uppercase",marginBottom:8}}>Alle Übungen kombiniert</div>
+            <div style={{fontSize:56,fontWeight:900,lineHeight:1,letterSpacing:-2}}>{Object.values(totals).reduce((a,b)=>a+b,0).toLocaleString("de-DE")}</div>
+            <div style={{fontSize:14,color:"#8E8E93",marginTop:6}}>Wiederholungen gesamt</div>
+          </div>
+          <div style={{background:"#1C1C1E",borderRadius:16,padding:"16px",marginBottom:16,display:"flex",justifyContent:"space-around",border:"1px solid #2C2C2E"}}>
+            <div style={{textAlign:"center"}}>
+              <div style={{fontSize:28,fontWeight:800,color:"#3B82F6"}}>{Object.keys(logs).filter(d=>Object.values(logs[d]).some(v=>v>0)).length}</div>
+              <div style={{fontSize:12,color:"#8E8E93",marginTop:2}}>Trainingstage</div>
+            </div>
+            <div style={{width:1,background:"#2C2C2E"}}/>
+            <div style={{textAlign:"center"}}>
+              <div style={{fontSize:28,fontWeight:800,color:"#3B82F6"}}>{activeExList.length}</div>
+              <div style={{fontSize:12,color:"#8E8E93",marginTop:2}}>Aktive Übungen</div>
+            </div>
+          </div>
+          <div style={{fontSize:12,color:"#8E8E93",marginBottom:10,paddingLeft:2}}>Tippe auf eine Übung für Details →</div>
+          {exercises.filter(e=>totals[e.id]>0).sort((a,b)=>(totals[b.id]||0)-(totals[a.id]||0)).map(ex=>{
+            const count=totals[ex.id]||0, max=Math.max(...exercises.map(e=>totals[e.id]||0)), pct=max>0?(count/max)*100:0;
+            return (
+              <button key={ex.id} onClick={()=>setDetailEx(ex.id)} style={{width:"100%",background:"#1C1C1E",borderRadius:14,padding:"16px",marginBottom:10,border:"1px solid #2C2C2E",cursor:"pointer",textAlign:"left",display:"block"}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+                  <div style={{display:"flex",alignItems:"center",gap:10}}>
+                    <span style={{fontSize:20}}>{ex.emoji}</span>
+                    <span style={{fontWeight:600,fontSize:15,color:"#F5F5F0"}}>{ex.name}</span>
+                  </div>
+                  <div style={{display:"flex",alignItems:"center",gap:8}}>
+                    <span style={{fontSize:24,fontWeight:800,color:"#F5F5F0"}}>{count.toLocaleString("de-DE")}</span>
+                    <span style={{color:"#8E8E93",fontSize:16}}>›</span>
+                  </div>
+                </div>
+                <div style={{height:4,background:"#2C2C2E",borderRadius:2,overflow:"hidden"}}>
+                  <div style={{height:"100%",width:`${pct}%`,background:"#3B82F6",borderRadius:2}}/>
+                </div>
+              </button>
+            );
+          })}
+          {Object.keys(totals).length===0&&(
+            <div style={{textAlign:"center",padding:"60px 0",color:"#8E8E93"}}>
+              <div style={{fontSize:36,marginBottom:12}}>📊</div>
+              <div>Starte dein Training, um Statistiken zu sehen.</div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── LIFETIME DETAIL ── */}
+      {tab==="lifetime"&&detailEx&&detailExObj&&(
+        <div style={{padding:"20px 16px"}}>
+          <button onClick={()=>setDetailEx(null)} style={{background:"none",border:"none",color:"#3B82F6",cursor:"pointer",fontSize:15,fontWeight:600,marginBottom:16,padding:0,display:"flex",alignItems:"center",gap:4}}>‹ Zurück</button>
+          <div style={{display:"flex",alignItems:"center",gap:14,marginBottom:20}}>
+            <span style={{fontSize:36}}>{detailExObj.emoji}</span>
+            <div>
+              <div style={{fontSize:18,fontWeight:800}}>{detailExObj.name}</div>
+              <div style={{fontSize:13,color:"#8E8E93"}}>Detailansicht</div>
+            </div>
+          </div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10,marginBottom:20}}>
+            {[
+              {label:"Gesamt",      value:(totals[detailEx]||0).toLocaleString("de-DE")},
+              {label:"Trainingstage",value:detailHist.length},
+              {label:"Ø pro Tag",   value:detailHist.length>0?Math.round((totals[detailEx]||0)/detailHist.length).toLocaleString("de-DE"):"–"},
+            ].map(c=>(
+              <div key={c.label} style={{background:"#1C1C1E",borderRadius:12,padding:"14px 10px",textAlign:"center",border:"1px solid #2C2C2E"}}>
+                <div style={{fontSize:20,fontWeight:800,color:"#3B82F6"}}>{c.value}</div>
+                <div style={{fontSize:10,color:"#8E8E93",marginTop:4,lineHeight:1.3}}>{c.label}</div>
+              </div>
+            ))}
+          </div>
+          {detailHist.length>0&&(()=>{
+            const best=detailHist.reduce((a,b)=>a.count>b.count?a:b);
+            return (
+              <div style={{background:"#162d56",borderRadius:14,padding:"14px 16px",marginBottom:20,border:"1px solid #1d3b6b",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                <div>
+                  <div style={{fontSize:11,color:"#3B82F6",fontWeight:700,textTransform:"uppercase",letterSpacing:1,marginBottom:2}}>Bester Tag</div>
+                  <div style={{fontSize:14,color:"#8E8E93"}}>{fmtDate(best.date)}</div>
+                </div>
+                <div style={{fontSize:32,fontWeight:900}}>{best.count.toLocaleString("de-DE")}</div>
+              </div>
+            );
+          })()}
+          <div style={{fontSize:13,color:"#8E8E93",marginBottom:10,fontWeight:600}}>Alle Einträge</div>
+          {detailHist.length===0&&<div style={{color:"#8E8E93",textAlign:"center",padding:"40px 0"}}>Noch keine Daten.</div>}
+          {[...detailHist].reverse().map(({date,count})=>{
+            const pct=detailMax>0?(count/detailMax)*100:0;
+            return (
+              <div key={date} style={{marginBottom:10}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:5}}>
+                  <span style={{fontSize:13,color:"#8E8E93"}}>{fmtDate(date)}</span>
+                  <span style={{fontSize:17,fontWeight:800}}>{count.toLocaleString("de-DE")}</span>
+                </div>
+                <div style={{height:6,background:"#1C1C1E",borderRadius:3,overflow:"hidden"}}>
+                  <div style={{height:"100%",width:`${pct}%`,background:"#3B82F6",borderRadius:3}}/>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* ── ÜBUNGEN MODAL ── */}
+      {showPicker&&(
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.85)",zIndex:100,display:"flex",alignItems:"flex-end"}} onClick={()=>setShowPicker(false)}>
+          <div onClick={e=>e.stopPropagation()} style={{background:"#1C1C1E",borderRadius:"20px 20px 0 0",width:"100%",maxHeight:"85vh",overflow:"auto",padding:"24px 16px",maxWidth:480,margin:"0 auto"}}>
+            <div style={{fontWeight:800,fontSize:18,marginBottom:18}}>Übungen verwalten</div>
+            {exercises.map(ex=>(
+              <div key={ex.id} style={{borderBottom:"1px solid #2C2C2E"}}>
+                {renamingId===ex.id?(
+                  <div style={{padding:"12px 0"}}>
+                    <div style={{display:"flex",gap:8,marginBottom:8}}>
+                      <input value={renameVal.emoji} onChange={e=>setRenameVal(v=>({...v,emoji:e.target.value}))} style={{width:50,background:"#2C2C2E",border:"1px solid #3B82F6",color:"#F5F5F0",borderRadius:8,padding:"8px",fontSize:18,textAlign:"center",outline:"none"}}/>
+                      <input value={renameVal.name} onChange={e=>setRenameVal(v=>({...v,name:e.target.value}))} onKeyDown={e=>e.key==="Enter"&&confirmRename()} autoFocus style={{flex:1,background:"#2C2C2E",border:"1px solid #3B82F6",color:"#F5F5F0",borderRadius:8,padding:"8px 12px",fontSize:15,outline:"none"}}/>
+                    </div>
+                    <div style={{display:"flex",gap:8}}>
+                      <button onClick={confirmRename} style={{flex:1,...S.btnBlue,padding:"8px 0"}}>Speichern</button>
+                      <button onClick={()=>setRenamingId(null)} style={{flex:1,...S.btnGray,color:"#8E8E93",padding:"8px 0"}}>Abbrechen</button>
+                    </div>
+                  </div>
+                ):(
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"12px 0",gap:8}}>
+                    <button onClick={()=>startRename(ex)} style={{display:"flex",alignItems:"center",gap:10,background:"none",border:"none",cursor:"pointer",flex:1,textAlign:"left",padding:0}}>
+                      <span style={{fontSize:20}}>{ex.emoji}</span>
+                      <span style={{fontSize:15,color:"#F5F5F0"}}>{ex.name}</span>
+                      <span style={{fontSize:11,color:"#8E8E93",marginLeft:2}}>✏️</span>
+                    </button>
+                    <button onClick={()=>toggleActive(ex.id)} style={{padding:"6px 14px",borderRadius:20,border:"none",cursor:"pointer",fontWeight:700,fontSize:13,flexShrink:0,background:activeEx.includes(ex.id)?"#3B82F6":"#2C2C2E",color:activeEx.includes(ex.id)?"#fff":"#8E8E93"}}>
+                      {activeEx.includes(ex.id)?"Aktiv ✓":"Inaktiv"}
+                    </button>
+                  </div>
+                )}
+              </div>
+            ))}
+            <div style={{marginTop:20}}>
+              <div style={{fontWeight:700,marginBottom:12}}>Eigene Übung hinzufügen</div>
+              <div style={{display:"flex",gap:8}}>
+                <input value={newExEmoji} onChange={e=>setNewExEmoji(e.target.value)} style={{width:50,background:"#2C2C2E",border:"1px solid #3a3a3e",color:"#F5F5F0",borderRadius:8,padding:"10px",fontSize:18,textAlign:"center",outline:"none"}}/>
+                <input value={newExName} onChange={e=>setNewExName(e.target.value)} placeholder="z.B. Muscle-Ups" onKeyDown={e=>e.key==="Enter"&&addCustomExercise()} style={{flex:1,...S.input}}/>
+                <button onClick={addCustomExercise} style={{...S.btnBlue,width:44,flexShrink:0}}>+</button>
+              </div>
+            </div>
+            <button onClick={()=>setShowPicker(false)} style={{width:"100%",marginTop:16,background:"#2C2C2E",border:"none",color:"#F5F5F0",padding:14,borderRadius:12,cursor:"pointer",fontWeight:700,fontSize:15}}>Fertig</button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+</script>
+
+<script>
+  if('serviceWorker' in navigator){
+    const sw=`const C='cali-v1';self.addEventListener('install',e=>{self.skipWaiting();});self.addEventListener('activate',e=>{e.waitUntil(caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==C).map(k=>caches.delete(k)))));self.clients.claim();});self.addEventListener('fetch',e=>{e.respondWith(caches.match(e.request).then(r=>r||fetch(e.request).catch(()=>caches.match(e.request))));});`;
+    const blob=new Blob([sw],{type:'application/javascript'});
+    navigator.serviceWorker.register(URL.createObjectURL(blob)).catch(()=>{});
+  }
+</script>
+</body>
+</html>
